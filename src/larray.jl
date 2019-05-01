@@ -75,6 +75,10 @@ end
   :(setindex!(getfield(x,:__x),y,$idx))
 end
 
+function Base.getindex(x::LArray,s::AbstractArray{Symbol,1})
+    [getindex(x,si) for si in s]
+end
+
 function Base.similar(x::LArray{T,K,D,Syms},::Type{S},dims::NTuple{N,Int}) where {T,K,D,Syms,S,N}
     tmp = similar(x.__x,S,dims)
     LArray{S,N,typeof(tmp),Syms}(tmp)
@@ -91,14 +95,18 @@ Base.unsafe_convert(::Type{Ptr{T}}, a::LArray{T,N,D,S}) where {T,N,D,S} = Base.u
 # Broadcast
 #####################################
 struct LAStyle{T,N,L} <: Broadcast.AbstractArrayStyle{N} end
-LAStyle{T,N,L}(x::Val{1}) where {T,N,L} = LAStyle{T,N,L}()
+LAStyle{T,N,L}(x::Val{i}) where {T,N,L,i} = LAStyle{T,N,L}()
 Base.BroadcastStyle(::Type{LArray{T,N,D,L}}) where {T,N,D,L} = LAStyle{T,N,L}()
-Base.BroadcastStyle(::LabelledArrays.LAStyle{T,N,L}, ::LabelledArrays.LAStyle{E,N,L}) where{T,E,N,L} = 
+Base.BroadcastStyle(::LabelledArrays.LAStyle{T,N,L}, ::LabelledArrays.LAStyle{E,N,L}) where{T,E,N,L} =
     LAStyle{promote_type(T,E),N,L}()
 
 function Base.similar(bc::Broadcast.Broadcasted{LAStyle{T,N,L}}, ::Type{ElType}) where {T,N,L,ElType}
-    tmp = similar(Array{ElType,N},axes(bc))
-    return LArray{ElType,N,typeof(tmp),L}(tmp)
+    tmp = similar(Array{ElType},axes(bc))
+    if prod(length.(axes(bc))) != prod(length.(axes(L)))
+        return tmp
+    else
+        return LArray{ElType,N,typeof(tmp),L}(tmp)
+    end
 end
 
 """
@@ -164,3 +172,71 @@ For example:
 """
 symbols(::LArray{T,N,D,Syms}) where {T,N,D,Syms} = Syms
 
+
+# copy constructors
+
+"""
+LVector(v1::Union{SLArray,LArray}; kwargs...)
+
+Creates a 1D copy of v1 with corresponding items in kwargs replaced.
+
+For example:
+
+    z = LVector(a=1, b=2, c=3);
+    z2 = LVector(z; c=30)
+"""
+function LVector(v1::Union{SLArray,LArray}; kwargs...)
+  t2 = merge(convert(NamedTuple, v1), kwargs.data)
+  LVector(t2)
+end
+
+
+"""
+LVector(v1::Union{SLArray,LArray}; kwargs...)
+
+Creates a copy of v1 with corresponding items in kwargs replaced.
+
+For example:
+
+    ABCD = @SLArray (2,2) (:a,:b,:c,:d);
+    B = ABCD(1,2,3,4);
+    B2 = LArray(B; c=30 )
+"""
+function LArray(v1::Union{SLArray,LArray}; kwargs...)
+  t2 = merge(convert(NamedTuple, v1), kwargs.data)
+  LArray(size(v1),t2)
+end
+
+
+
+# moved vom slarray.js to here because LArray need to be known
+"""
+SLVector(v1::SLArray; kwargs...)
+
+Creates a 1D copy of v1 with corresponding items in kwargs replaced.
+
+For example:
+
+    z = SLVector(a=1, b=2, c=3);
+    z2 = SLVector(z; c=30)
+"""
+function SLVector(v1::Union{SLArray,LArray}; kwargs...)
+  t2 = merge(convert(NamedTuple, v1), kwargs.data)
+  SLVector(t2)
+end
+
+"""
+SLVector(v1::SLArray; kwargs...)
+
+Creates a copy of v1 with corresponding items in kwargs replaced.
+
+For example:
+
+    ABCD = @SLArray (2,2) (:a,:b,:c,:d);
+    B = ABCD(1,2,3,4);
+    B2 = SLArray(B; c=30 )
+"""
+function SLArray(v1::Union{SLArray{S,T,N,L,Syms},LArray{T,N,D,Syms}}; kwargs...) where {S,T,N,L,Syms,D}
+  t2 = merge(convert(NamedTuple, v1), kwargs.data)
+  SLArray{S}(t2)
+end
